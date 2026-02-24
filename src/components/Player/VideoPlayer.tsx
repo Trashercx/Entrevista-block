@@ -1,5 +1,7 @@
 // src/components/Player/VideoPlayer.tsx
 import React, { useEffect, useRef, useMemo, useState, forwardRef, useImperativeHandle } from 'react';
+import { Box, Paper, IconButton, Typography } from '@mui/material';
+import { Play, Pause, SkipBack, SkipForward } from 'lucide-react';
 import { VirtualTimeEngine } from '../../core/VirtualTimeEngine';
 import { Timeline } from './Timeline/Controls/Timeline';
 import type { VideoDataPayload, Segment, Tag } from '../../types';
@@ -8,15 +10,14 @@ interface VideoPlayerProps {
   data: VideoDataPayload;
 }
 
-// 1. Definimos la interfaz de la "API" que expondremos al padre
 export interface VideoPlayerRef {
   play: () => void;
   pause: () => void;
   next: () => void;
   prev: () => void;
+  getCurrentTime: () => number; // NUEVO
 }
 
-// 2. Envolvemos el componente en forwardRef
 export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({ data }, ref) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -24,6 +25,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({ data 
   
   const [virtualProgress, setVirtualProgress] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [virtualDurationDisplay, setVirtualDurationDisplay] = useState(0);
 
   const engine = useMemo(() => {
     return new VirtualTimeEngine(data.segments, data.tags, 0);
@@ -98,17 +100,18 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({ data 
     }
   };
 
-  // 3. Exponemos los métodos usando useImperativeHandle tal como enseñó el PO
   useImperativeHandle(ref, () => ({
     play: internalPlay,
     pause: internalPause,
     next: internalNext,
-    prev: internalPrev
+    prev: internalPrev,
+    getCurrentTime: () => videoRef.current?.currentTime || 0 // NUEVO
   }));
 
   const handleLoadedMetadata = () => {
     if (videoRef.current) {
       engine.setRealDuration(videoRef.current.duration);
+      setVirtualDurationDisplay(engine.getVirtualDuration());
     }
   };
 
@@ -139,36 +142,69 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({ data 
     };
   }, []);
 
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  };
+
   return (
-    <div 
+    <Paper 
+      elevation={3} 
       ref={containerRef}
       tabIndex={0} 
       onKeyDown={handleKeyDown}
-      style={{ width: '100%', maxWidth: '800px', margin: '0 auto', position: 'relative', outline: 'none' }}
+      sx={{ 
+        width: '100%', 
+        maxWidth: 900, 
+        mx: 'auto', 
+        p: 2, 
+        outline: 'none',
+        borderRadius: 2,
+        backgroundColor: 'background.paper'
+      }}
     >
-      <div style={{ position: 'relative' }}>
-          <video
-            ref={videoRef}
-            src={data.videoUrl}
-            width="100%"
-            onLoadedMetadata={handleLoadedMetadata}
-            controls={false} 
-            style={{ backgroundColor: '#ccc', cursor: 'pointer', display: 'block' }}
-            onClick={() => isPlaying ? internalPause() : internalPlay()}
-          />
-          {/* Texto superpuesto del tiempo virtual */}
-          <div style={{
+      {/* Contenedor del Video */}
+      <Box sx={{ position: 'relative', borderRadius: 2, overflow: 'hidden', backgroundColor: '#000' }}>
+        <video
+          ref={videoRef}
+          src={data.videoUrl}
+          width="100%"
+          onLoadedMetadata={handleLoadedMetadata}
+          controls={false} 
+          style={{ display: 'block', cursor: 'pointer' }}
+          onClick={() => isPlaying ? internalPause() : internalPlay()}
+        />
+        {/* Tiempo Virtual Superpuesto */}
+        <Typography 
+          variant="h5" 
+          sx={{
             position: 'absolute',
-            bottom: '10px',
-            right: '15px',
-            color: 'rgba(255, 255, 255, 0.8)',
-            fontSize: '24px',
-            textShadow: '1px 1px 2px rgba(0,0,0,0.8)'
-          }}>
-            {Math.floor(engine.getVirtualDuration() / 60)}:{Math.floor(engine.getVirtualDuration() % 60).toString().padStart(2, '0')} min
-          </div>
-        </div>
+            bottom: 16,
+            right: 16,
+            color: 'white',
+            fontWeight: 'bold',
+            textShadow: '0px 2px 4px rgba(0,0,0,0.8)'
+          }}
+        >
+          {formatTime(virtualDurationDisplay)} min
+        </Typography>
+      </Box>
+
+      {/* Controles de Reproducción Minimalistas */}
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 2, mt: 2 }}>
+        <IconButton onClick={internalPrev} color="primary" size="large">
+          <SkipBack size={24} />
+        </IconButton>
+        <IconButton onClick={() => isPlaying ? internalPause() : internalPlay()} color="primary" sx={{ transform: 'scale(1.2)' }}>
+          {isPlaying ? <Pause size={32} /> : <Play size={32} />}
+        </IconButton>
+        <IconButton onClick={internalNext} color="primary" size="large">
+          <SkipForward size={24} />
+        </IconButton>
+      </Box>
       
+      {/* Timeline */}
       <Timeline 
         engine={engine}
         segments={data.segments}
@@ -177,9 +213,9 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({ data 
         onSeek={handleSeek}
       />
       
-      <div style={{ marginTop: '15px', color: '#666', fontSize: '14px', textAlign: 'center' }}>
+      <Typography variant="body2" color="text.secondary" align="center" sx={{ mt: 3 }}>
         <strong>Atajos:</strong> <code>Espacio</code> (Play/Pause) • <code>Flechas ⬅️ ➡️</code> (Saltar Etiquetas)
-      </div>
-    </div>
+      </Typography>
+    </Paper>
   );
 });

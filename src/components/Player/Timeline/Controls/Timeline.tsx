@@ -1,19 +1,14 @@
-// src/components/Player/Timeline/Timeline.tsx
+// src/components/Player/Timeline/Controls/Timeline.tsx
 import React, { useMemo } from 'react';
+import { Box, Typography, Tooltip } from '@mui/material';
 import { VirtualTimeEngine } from '../../../../core/VirtualTimeEngine';
 import type { Segment, Tag } from '../../../../types';
-
-const formatTime = (totalSeconds: number) => {
-  const m = Math.floor(totalSeconds / 60);
-  const s = Math.floor(totalSeconds % 60);
-  return `${m}:${s.toString().padStart(2, '0')} min`;
-};
 
 interface TimelineProps {
   engine: VirtualTimeEngine;
   segments: Segment[];
   tags: Tag[];
-  virtualProgress: number; // 0 a 100
+  virtualProgress: number;
   onSeek: (virtualPercentage: number) => void;
 }
 
@@ -21,12 +16,12 @@ export const Timeline: React.FC<TimelineProps> = ({
   engine, segments, tags, virtualProgress, onSeek 
 }) => {
   const virtualDuration = engine.getVirtualDuration();
+  const realDuration = engine['realDuration'] || 0; // Usando fallback seguro
 
   const { visibleTracks, hiddenMarkers, totalTracks } = useMemo(() => {
     if (virtualDuration === 0) return { visibleTracks: [], hiddenMarkers: [], totalTracks: 1 };
 
     const tagMap = new Map(tags.map(t => [t.id, t]));
-    
     const visibles = segments.filter(s => !tagMap.get(s.tagId)?.isHidden);
     const hiddens = segments.filter(s => tagMap.get(s.tagId)?.isHidden);
 
@@ -80,97 +75,117 @@ export const Timeline: React.FC<TimelineProps> = ({
     onSeek(percentage);
   };
 
-  const TRACK_HEIGHT = 60; // Más alto para dar espacio al texto debajo de la línea
+  const TRACK_HEIGHT = 65; 
+
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    return `${m}:${s.toString().padStart(2, '0')} min`;
+  };
 
   return (
-    <div style={{ position: 'relative', marginTop: '25px' }}>
-      {/* Indicador de Tiempo Real arriba a la derecha */}
-      <div style={{ position: 'absolute', top: '-25px', right: 0, color: '#fff', fontSize: '14px' }}>
-        {formatTime(engine['realDuration'] as number)} ➔
-      </div>
+    <Box sx={{ position: 'relative', mt: 4 }}>
+      {/* Indicador de Tiempo Real */}
+      <Typography 
+        variant="caption" 
+        sx={{ position: 'absolute', top: -25, right: 0, color: 'text.secondary', fontWeight: 'bold' }}
+      >
+        {formatTime(realDuration)} ➔
+      </Typography>
 
-      <div 
-        style={{ 
+      <Box 
+        onClick={handleTimelineClick}
+        sx={{ 
           position: 'relative', 
           width: '100%', 
-          height: `${totalTracks * TRACK_HEIGHT}px`, 
-          backgroundColor: '#80d8e5', // Celeste de la imagen
+          height: totalTracks * TRACK_HEIGHT, 
+          backgroundColor: '#80d8e5', // Celeste Adobe Premiere
           cursor: 'pointer',
           overflow: 'hidden',
+          borderRadius: 1,
+          boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.1)'
         }}
-        onClick={handleTimelineClick}
       >
-        {/* Pistas Visibles Apiladas (Estilo Línea + Texto) */}
+        {/* Etiquetas Visibles */}
         {visibleTracks.map((seg, i) => (
-          <div key={`vis-${i}`} style={{
-            position: 'absolute',
-            left: `${seg.leftPct}%`,
-            width: `${seg.widthPct}%`,
-            top: `${seg.trackIndex * TRACK_HEIGHT + 10}px`,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'flex-start',
-            zIndex: 6,
-          }}>
-            {/* La línea de color */}
-            <div style={{
-              width: '80%', // No ocupa el 100% para dejar un pequeño margen visual como en la imagen
-              height: '6px',
-              backgroundColor: seg.tag.color,
-              margin: '0 auto'
-            }} />
-            {/* El texto debajo */}
-            <span style={{ 
-              color: '#fff', 
-              fontSize: '14px',
-              marginTop: '4px',
-              marginLeft: '10%',
-              whiteSpace: 'nowrap'
+          <Tooltip key={`vis-${i}`} title={`${seg.tag.name} (${Math.round(seg.endV - seg.startV)}s)`} arrow>
+            <Box sx={{
+              position: 'absolute',
+              left: `${seg.leftPct}%`,
+              width: `${seg.widthPct}%`,
+              top: seg.trackIndex * TRACK_HEIGHT + 15,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'flex-start',
+              zIndex: 6,
+              transition: 'filter 0.2s',
+              '&:hover': { filter: 'brightness(0.9)' }
             }}>
-              {seg.tag.name}
-            </span>
-          </div>
+              <Box sx={{
+                width: '85%',
+                height: 6,
+                backgroundColor: seg.tag.color,
+                mx: 'auto',
+                borderRadius: 4
+              }} />
+              <Typography sx={{ 
+                color: '#fff', 
+                fontSize: '0.8rem',
+                mt: 0.5,
+                ml: '7.5%',
+                whiteSpace: 'nowrap',
+                fontWeight: 500,
+                textShadow: '0px 1px 2px rgba(0,0,0,0.5)'
+              }}>
+                {seg.tag.name}
+              </Typography>
+            </Box>
+          </Tooltip>
         ))}
 
-        {/* Zonas Descartables (Línea Gris Oscura) */}
+        {/* Zonas Descartables */}
         {hiddenMarkers.map((marker, i) => (
-          <div key={`hidden-${i}`} style={{
-            position: 'absolute',
-            left: `${marker.leftPct}%`,
-            top: '10px',
-            width: '20%', // Simulando la barra gris de descartable
-            zIndex: 5,
-            display: 'flex',
-            flexDirection: 'column',
-          }}>
-             <span style={{ color: '#fff', fontSize: '12px', marginBottom: '2px' }}>
-              {marker.durationReal} sec
-            </span>
-            <div style={{
-              width: '100%',
-              height: '6px',
-              backgroundColor: '#424242',
-            }} />
-            <span style={{ color: '#fff', fontSize: '14px', marginTop: '4px' }}>
-              Descartable
-            </span>
-          </div>
+          <Tooltip key={`hidden-${i}`} title={`Salto descartable de ${marker.durationReal}s`} arrow>
+            <Box sx={{
+              position: 'absolute',
+              left: `${marker.leftPct}%`,
+              top: 15,
+              width: '15%', 
+              zIndex: 5,
+              display: 'flex',
+              flexDirection: 'column',
+            }}>
+              <Typography sx={{ color: '#fff', fontSize: '0.7rem', mb: 0.2, ml: 0.5, textShadow: '0px 1px 2px rgba(0,0,0,0.5)' }}>
+                {marker.durationReal} sec
+              </Typography>
+              <Box sx={{
+                width: '100%',
+                height: 6,
+                backgroundColor: '#424242',
+                borderRadius: 4
+              }} />
+              <Typography sx={{ color: '#fff', fontSize: '0.8rem', mt: 0.5, ml: 0.5, textShadow: '0px 1px 2px rgba(0,0,0,0.5)' }}>
+                Descartable
+              </Typography>
+            </Box>
+          </Tooltip>
         ))}
 
-        {/* Cursor (Playhead) Azul vertical */}
-        <div 
-          style={{
+        {/* Cursor / Playhead */}
+        <Box 
+          sx={{
             position: 'absolute',
             left: `${virtualProgress}%`,
             top: 0,
             bottom: 0,
-            width: '2px',
-            backgroundColor: '#0000ff', // Línea azul de la captura
+            width: 2,
+            backgroundColor: '#1976d2', // Azul MUI
             zIndex: 10,
-            pointerEvents: 'none'
+            pointerEvents: 'none',
+            boxShadow: '0 0 4px rgba(25, 118, 210, 0.8)'
           }}
         />
-      </div>
-    </div>
+      </Box>
+    </Box>
   );
 };

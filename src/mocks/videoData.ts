@@ -1,13 +1,13 @@
 import type { Tag, Segment, VideoDataPayload } from '../types';
 
-const mockTags: Tag[] = [
+export const mockTags: Tag[] = [
   { id: 't1', name: 'Liderazgo', color: '#ff4444', isHidden: false }, 
   { id: 't2', name: 'Trabajo en equipo', color: '#cddc39', isHidden: false }, 
   { id: 't3', name: 'Buena comunicación', color: '#4caf50', isHidden: false }, 
   { id: 't4', name: 'Descartable', color: '#424242', isHidden: true }, 
 ];
 
-const mockSegments: Segment[] = [
+export const mockSegments: Segment[] = [
  
   { id: 's1', tagId: 't1', startReal: 10, endReal: 30 }, 
   { id: 's2', tagId: 't3', startReal: 50, endReal: 80 },

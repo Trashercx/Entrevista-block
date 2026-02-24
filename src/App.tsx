@@ -1,6 +1,6 @@
 // src/App.tsx
 import { videoPayload } from './mocks/videoData';
-import { VideoPlayer } from './components/Player/Timeline/Controls/VideoPlayer';
+import { VideoPlayer } from './components/Player/VideoPlayer';
 import './App.css';
 
 function App() {

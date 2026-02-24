@@ -1,5 +1,5 @@
-// src/components/Player/Timeline/Controls/VideoPlayer.tsx
-import React, { useEffect, useRef, useMemo, useState } from 'react';
+// src/components/Player/VideoPlayer.tsx
+import React, { useEffect, useRef, useMemo, useState, forwardRef, useImperativeHandle } from 'react';
 import { VirtualTimeEngine } from '../../core/VirtualTimeEngine';
 import { Timeline } from './Timeline/Controls/Timeline';
 import type { VideoDataPayload, Segment, Tag } from '../../types';
@@ -8,7 +8,16 @@ interface VideoPlayerProps {
   data: VideoDataPayload;
 }
 
-export const VideoPlayer: React.FC<VideoPlayerProps> = ({ data }) => {
+// 1. Definimos la interfaz de la "API" que expondremos al padre
+export interface VideoPlayerRef {
+  play: () => void;
+  pause: () => void;
+  next: () => void;
+  prev: () => void;
+}
+
+// 2. Envolvemos el componente en forwardRef
+export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(({ data }, ref) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const animationRef = useRef<number | undefined>(undefined);
@@ -20,7 +29,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ data }) => {
     return new VirtualTimeEngine(data.segments, data.tags, 0);
   }, [data]);
 
-  // Extraer límites de las etiquetas visibles para la navegación por teclado
   const visibleBoundaries = useMemo(() => {
     const boundaries = new Set<number>();
     const tagMap = new Map(data.tags.map((t: Tag) => [t.id, t]));
@@ -38,14 +46,12 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ data }) => {
     if (!videoRef.current) return;
 
     const currentRealTime = videoRef.current.currentTime;
-    
-    // 1. Validar saltos invisibles
     const validTime = engine.getValidRealTime(currentRealTime);
+    
     if (validTime !== currentRealTime) {
       videoRef.current.currentTime = validTime; 
     }
 
-    // 2. Calcular progreso virtual
     const vTime = engine.realToVirtual(validTime);
     const vDuration = engine.getVirtualDuration();
     if (vDuration > 0) {
@@ -55,20 +61,50 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ data }) => {
     animationRef.current = requestAnimationFrame(handleTimeUpdate);
   };
 
-  const onPlay = () => {
+  const internalPlay = () => {
     setIsPlaying(true);
+    videoRef.current?.play();
     if (!animationRef.current) {
       animationRef.current = requestAnimationFrame(handleTimeUpdate);
     }
   };
 
-  const onPause = () => {
+  const internalPause = () => {
     setIsPlaying(false);
+    videoRef.current?.pause();
     if (animationRef.current) {
       cancelAnimationFrame(animationRef.current);
       animationRef.current = undefined;
     }
   };
+
+  const internalNext = () => {
+    if (!videoRef.current) return;
+    const currentTime = videoRef.current.currentTime;
+    const nextTarget = visibleBoundaries.find(b => b > currentTime + 0.5);
+    if (nextTarget !== undefined) {
+      videoRef.current.currentTime = engine.getValidRealTime(nextTarget);
+    }
+  };
+
+  const internalPrev = () => {
+    if (!videoRef.current) return;
+    const currentTime = videoRef.current.currentTime;
+    const prevTarget = [...visibleBoundaries].reverse().find(b => b < currentTime - 0.5);
+    if (prevTarget !== undefined) {
+      videoRef.current.currentTime = engine.getValidRealTime(prevTarget);
+    } else {
+      videoRef.current.currentTime = 0;
+    }
+  };
+
+  // 3. Exponemos los métodos usando useImperativeHandle tal como enseñó el PO
+  useImperativeHandle(ref, () => ({
+    play: internalPlay,
+    pause: internalPause,
+    next: internalNext,
+    prev: internalPrev
+  }));
 
   const handleLoadedMetadata = () => {
     if (videoRef.current) {
@@ -80,44 +116,23 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ data }) => {
     if (!videoRef.current) return;
     const targetVirtualTime = engine.getVirtualDuration() * virtualPercentage;
     const targetRealTime = engine.virtualToReal(targetVirtualTime);
-    // Asegurar que el click manual no caiga en un segmento oculto
     videoRef.current.currentTime = engine.getValidRealTime(targetRealTime); 
   };
 
-  // Navegación Inteligente (Teclado)
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (!videoRef.current) return;
-    
-    const currentTime = videoRef.current.currentTime;
-
     if (e.code === 'Space') {
-      e.preventDefault(); // Previene el scroll del navegador
-      if (videoRef.current.paused) {
-        videoRef.current.play();
-      } else {
-        videoRef.current.pause();
-      }
+      e.preventDefault();
+      isPlaying ? internalPause() : internalPlay();
     } else if (e.code === 'ArrowRight') {
       e.preventDefault();
-      // Busca el próximo punto mayor al tiempo actual + 0.5s margen
-      const nextTarget = visibleBoundaries.find(b => b > currentTime + 0.5);
-      if (nextTarget !== undefined) {
-        videoRef.current.currentTime = engine.getValidRealTime(nextTarget);
-      }
+      internalNext();
     } else if (e.code === 'ArrowLeft') {
       e.preventDefault();
-      // Busca el punto anterior menor al tiempo actual - 0.5s margen
-      const prevTarget = [...visibleBoundaries].reverse().find(b => b < currentTime - 0.5);
-      if (prevTarget !== undefined) {
-        videoRef.current.currentTime = engine.getValidRealTime(prevTarget);
-      } else {
-        videoRef.current.currentTime = 0; // Regresa al inicio si no hay más atrás
-      }
+      internalPrev();
     }
   };
 
   useEffect(() => {
-    // Para que el div capture el teclado sin tener que hacer click en él primero
     if (containerRef.current) containerRef.current.focus();
     return () => {
       if (animationRef.current) cancelAnimationFrame(animationRef.current);
@@ -131,17 +146,28 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ data }) => {
       onKeyDown={handleKeyDown}
       style={{ width: '100%', maxWidth: '800px', margin: '0 auto', position: 'relative', outline: 'none' }}
     >
-      <video
-        ref={videoRef}
-        src={data.videoUrl}
-        width="100%"
-        onPlay={onPlay}
-        onPause={onPause}
-        onLoadedMetadata={handleLoadedMetadata}
-        controls={false} 
-        style={{ borderRadius: '8px', backgroundColor: '#000', cursor: 'pointer' }}
-        onClick={() => isPlaying ? videoRef.current?.pause() : videoRef.current?.play()}
-      />
+      <div style={{ position: 'relative' }}>
+          <video
+            ref={videoRef}
+            src={data.videoUrl}
+            width="100%"
+            onLoadedMetadata={handleLoadedMetadata}
+            controls={false} 
+            style={{ backgroundColor: '#ccc', cursor: 'pointer', display: 'block' }}
+            onClick={() => isPlaying ? internalPause() : internalPlay()}
+          />
+          {/* Texto superpuesto del tiempo virtual */}
+          <div style={{
+            position: 'absolute',
+            bottom: '10px',
+            right: '15px',
+            color: 'rgba(255, 255, 255, 0.8)',
+            fontSize: '24px',
+            textShadow: '1px 1px 2px rgba(0,0,0,0.8)'
+          }}>
+            {Math.floor(engine.getVirtualDuration() / 60)}:{Math.floor(engine.getVirtualDuration() % 60).toString().padStart(2, '0')} min
+          </div>
+        </div>
       
       <Timeline 
         engine={engine}
@@ -152,8 +178,8 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ data }) => {
       />
       
       <div style={{ marginTop: '15px', color: '#666', fontSize: '14px', textAlign: 'center' }}>
-        <strong>Atajos de teclado:</strong> <code>Espaciadora</code> (Play/Pause) • <code>Flechas ⬅️ ➡️</code> (Saltar entre etiquetas)
+        <strong>Atajos:</strong> <code>Espacio</code> (Play/Pause) • <code>Flechas ⬅️ ➡️</code> (Saltar Etiquetas)
       </div>
     </div>
   );
-};
+});

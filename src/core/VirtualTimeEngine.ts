@@ -51,6 +51,11 @@ export class VirtualTimeEngine {
     return this.virtualDuration;
   }
 
+  public setRealDuration(duration: number): void {
+    this.realDuration = duration;
+    this.calculateVirtualDuration();
+  }
+
   // 3. Traductores Bidireccionales
   public realToVirtual(realTime: number): number {
     let virtualTime = realTime;
